@@ -61,6 +61,14 @@ for N = numUsersVec
     EE_mrc(idx)= sumEm/nTrials;
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%% Call these somewhere to adjust the drone altitude %%%% 
+% currentAltitude = 100; % initial altitude of the UAV
+% deltaAltitude = 50;    % change in altitude
+% newAltitude = changeUAVAltitude(currentAltitude, deltaAltitude);
+% disp(['New UAV Altitude: ', num2str(newAltitude), ' meters']);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 % Plot Sum Capacity (linear)
 figure('Name','Sum Capacity - UAV Amplified Gains');
 plot(numUsersVec, C_gbs,'b-o','LineWidth',1.5); hold on;
