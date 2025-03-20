@@ -264,3 +264,28 @@ rx_lin= 10^((rx_dB-30)/10);
 snr_lin= rx_lin/ N0_lin;
 if snr_lin<0, snr_lin=0; end
 end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [newAltitude] = changeUAVAltitude(currentAltitude, deltaAltitude)
+% CHANGEUAVALTITUDE
+% Change the altitude of the UAV.
+%
+% Inputs:
+%   currentAltitude - The current altitude of the UAV (in meters).
+%   deltaAltitude   - The change in altitude (in meters).
+%
+% Output:
+%   newAltitude - The new altitude of the UAV (in meters).
+
+newAltitude = currentAltitude + deltaAltitude;
+
+% Ensure the new altitude is within bounds (e.g., 0 to 500 meters)
+minAltitude = 0;
+maxAltitude = 500;
+if newAltitude < minAltitude
+    newAltitude = minAltitude;
+elseif newAltitude > maxAltitude
+    newAltitude = maxAltitude;
+end
+
+end
