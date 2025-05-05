@@ -1,0 +1,124 @@
+% Parameters (example values — replace as needed)
+eta = 1e3;           % CPU cycles per bit (local)
+eta_c = 0.5e3;       % CPU cycles per bit (cloud)
+epsilon = 1e-9;      % Energy per CPU cycle (Joules)
+L = 1e6;             % Total data size (bits)
+alpha_i = 0.5;       % Fraction of data offloaded
+B = 1e6;             % Bandwidth (Hz)
+T_i = 0.5;           % Time slot (s)
+N0 = 1e-9;           % Noise power spectral density (W/Hz)
+d_i = 100;           % Distance to base station (m)
+d0 = 1;              % Reference distance (m)
+beta = 3;            % Path loss exponent
+G = 1;               % Channel gain
+lambda = 1;          % Lagrange multiplier
+C_s = 1e10;          % Cloud capacity
+
+% -----------------------------
+% Equation (1)
+C_i = eta * L;
+
+% Equation (2)
+E_comp = epsilon * C_i;
+
+% Equation (3)
+% gamma_i = (P_tx * G) / (N0 * B)
+% --> Used to relate power to SNR, not computed directly
+
+% Equation (4)
+P_rx = @(P_tx) P_tx * (d_i / d0)^(-beta);
+
+% Equation (5)
+R_i = (alpha_i * L) / T_i;  % bits per second
+
+% Equation (6)
+P_rx_required = N0 * B * (2^(R_i / B) - 1);
+
+% Equation (7)
+P_tx = P_rx_required * (d_i / d0)^beta;
+
+% Equation (8)
+E_tx = P_tx * T_i;
+
+% Equation (9)
+E_tx_full = N0 * B * T_i * (2^(R_i / B) - 1) * (d_i / d0)^beta;
+
+% Equation (10)
+E_comp_partial = epsilon * eta * L * (1 - alpha_i);
+
+% Equation (11)
+E_tx_partial = N0 * B * T_i * (2^((alpha_i * L) / (B * T_i)) - 1) * (d_i / d0)^beta;
+
+% Equation (12)
+E_total = E_comp_partial + E_tx_partial;
+
+% Equation (13)
+C_cloud_i = eta_c * L * alpha_i;
+
+% Equation (14)
+% Minimize sum(E_total) subject to sum(C_cloud_i) <= C_s
+% (In multi-user case, loop over i and sum)
+
+% Equation (15)
+Lagrangian = E_total + lambda * (C_cloud_i - C_s);
+
+%%%%%%%%%%%%%%%%%% Full optimized run %%%%%%%%%%%%%%%%%%%%%5
+
+% Number of users
+N = 5;
+
+% Parameters (example values for each user)
+L = 1e6 * ones(N,1);         % Data size per user (bits)
+eta = 1e3;                   % CPU cycles per bit (local)
+eta_c = 0.5e3;               % CPU cycles per bit (cloud)
+epsilon = 1e-9;              % Energy per cycle
+B = 1e6;                     % Bandwidth (Hz)
+T_i = 0.5 * ones(N,1);       % Time slot per user (s)
+N0 = 1e-9;                   % Noise PSD (W/Hz)
+d_i = linspace(50,150,N)';   % Distances to BS (m)
+d0 = 1;                      % Reference distance (m)
+beta = 3;                    % Path loss exponent
+C_s = 1e11;                  % Total cloud capacity
+
+% Objective function: total energy E = E_comp + E_tx
+energy_fn = @(alpha) total_energy(alpha, L, eta, epsilon, ...
+    B, T_i, N0, d_i, d0, beta);
+
+% Constraint function: total cloud cycles <= C_s
+nonlcon = @(alpha) cloud_constraint(alpha, L, eta_c, C_s);
+
+% Bounds: 0 <= alpha_i <= 1
+lb = zeros(N,1);
+ub = ones(N,1);
+alpha0 = 0.5 * ones(N,1);  % Initial guess
+
+% Optimization
+options = optimoptions('fmincon','Display','iter','Algorithm','sqp');
+[alpha_opt, E_min] = fmincon(energy_fn, alpha0, [], [], [], [], lb, ub, nonlcon, options);
+
+% Display results
+disp("Optimal Offloading Fractions (alpha):");
+disp(alpha_opt);
+disp("Minimum Total Energy (J):");
+disp(E_min);
+
+%% --- Helper Functions ---
+
+function E = total_energy(alpha, L, eta, epsilon, B, T_i, N0, d_i, d0, beta)
+    % Local computation energy
+    E_comp = epsilon * eta .* L .* (1 - alpha);
+    
+    % Transmission energy
+    R_i = (alpha .* L) ./ T_i;  % Rate per user
+    E_tx = N0 * B .* T_i .* (2.^(R_i ./ B) - 1) .* (d_i / d0).^beta;
+    
+    E = sum(E_comp + E_tx);
+end
+
+function [c, ceq] = cloud_constraint(alpha, L, eta_c, C_s)
+    % Inequality constraint: total cloud cycles <= C_s
+    total_C_cloud = sum(eta_c * L .* alpha);
+    c = total_C_cloud - C_s;
+    ceq = [];
+end
+
