@@ -62,7 +62,7 @@ C_cloud_i = eta_c * L * alpha_i;
 % Equation (15)
 Lagrangian = E_total + lambda * (C_cloud_i - C_s);
 
-%%%%%%%%%%%%%%%%%% Full optimized run %%%%%%%%%%%%%%%%%%%%%5
+%%%%%%%%%%%%%%%%%% Full optimized run %%%%%%%%%%%%%%%%%%%%%
 
 % Number of users
 N = 5;
@@ -122,3 +122,85 @@ function [c, ceq] = cloud_constraint(alpha, L, eta_c, C_s)
     ceq = [];
 end
 
+
+%%%%%%%%%%%%%%%%%% visualize energy versus offloading for single user %%%%%%%%%%%%%%
+% Parameter values (single user)
+L = 1e6;            % Data size (bits)
+eta = 1e3;          % CPU cycles per bit (local)
+eta_c = 0.5e3;      % CPU cycles per bit (cloud)
+epsilon = 1e-9;     % Energy per cycle
+B = 1e6;            % Bandwidth (Hz)
+T_i = 0.5;          % Transmission time (s)
+N0 = 1e-9;          % Noise PSD (W/Hz)
+d_i = 100;          % Distance to base station (m)
+d0 = 1;             % Reference distance (m)
+beta = 3;           % Path loss exponent
+
+% Sweep alpha from 0 to 1
+alpha_vals = linspace(0, 1, 100);
+E_total_vals = zeros(size(alpha_vals));
+
+for k = 1:length(alpha_vals)
+    alpha = alpha_vals(k);
+    
+    % Local computation energy
+    E_comp = epsilon * eta * L * (1 - alpha);
+    
+    % Transmission energy
+    R = (alpha * L) / T_i;
+    E_tx = N0 * B * T_i * (2^(R / B) - 1) * (d_i / d0)^beta;
+    
+    % Total energy
+    E_total_vals(k) = E_comp + E_tx;
+end
+
+% Plot
+figure;
+plot(alpha_vals, E_total_vals, 'LineWidth', 2);
+xlabel('\alpha (Fraction Offloaded)');
+ylabel('Total Energy Consumption (J)');
+title('Energy Consumption vs. Offloading Ratio');
+grid on;
+
+
+%%%%%%%%%%%%%%%% energy versus offloading for multi-user %%%%%%%%%%%%
+
+% Shared parameters
+L = 1e6;         
+eta = 1e3;       
+epsilon = 1e-9;  
+B = 1e6;         
+T_i = 0.5;       
+N0 = 1e-9;       
+d0 = 1;          
+beta = 3;        
+
+% User distances
+d_list = [50, 100, 150, 200];  % in meters
+alpha_vals = linspace(0, 1, 100);
+colors = lines(length(d_list));
+
+% Plot
+figure;
+hold on;
+
+for j = 1:length(d_list)
+    d_i = d_list(j);
+    E_total = zeros(size(alpha_vals));
+    
+    for k = 1:length(alpha_vals)
+        alpha = alpha_vals(k);
+        E_comp = epsilon * eta * L * (1 - alpha);
+        R = (alpha * L) / T_i;
+        E_tx = N0 * B * T_i * (2^(R / B) - 1) * (d_i / d0)^beta;
+        E_total(k) = E_comp + E_tx;
+    end
+    
+    plot(alpha_vals, E_total, 'LineWidth', 2, 'Color', colors(j,:));
+end
+
+xlabel('\alpha (Fraction Offloaded)');
+ylabel('Total Energy (J)');
+title('Energy vs. Offloading Ratio for Different Distances');
+legend(arrayfun(@(d) sprintf('d = %dm', d), d_list, 'UniformOutput', false));
+grid on;
