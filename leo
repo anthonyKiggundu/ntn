@@ -274,17 +274,21 @@ if snr_lin<0, snr_lin=0; end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function [newAltitude] = changeUAVAltitude(currentAltitude, deltaAltitude)
+function [newAltitude, pathLoss] = changeUAVAltitude(currentAltitude, deltaAltitude, pathLossExponent, baseDistance)
 % CHANGEUAVALTITUDE
-% Change the altitude of the UAV.
+% Change the altitude of the UAV and calculate the path loss.
 %
 % Inputs:
-%   currentAltitude - The current altitude of the UAV (in meters).
-%   deltaAltitude   - The change in altitude (in meters).
+%   currentAltitude   - The current altitude of the UAV (in meters).
+%   deltaAltitude     - The change in altitude (in meters).
+%   pathLossExponent  - The path-loss exponent (dimensionless, e.g., 2-6).
+%   baseDistance      - The horizontal distance from the UAV to the receiver (in meters).
 %
-% Output:
+% Outputs:
 %   newAltitude - The new altitude of the UAV (in meters).
+%   pathLoss    - The calculated path loss (in dB).
 
+% Update the UAV altitude
 newAltitude = currentAltitude + deltaAltitude;
 
 % Ensure the new altitude is within bounds (e.g., 0 to 500 meters)
@@ -296,6 +300,15 @@ elseif newAltitude > maxAltitude
     newAltitude = maxAltitude;
 end
 
+% Calculate the 3D distance
+distance3D = sqrt(baseDistance^2 + newAltitude^2);
+
+% Calculate the path loss in dB
+pathLoss = 10 * pathLossExponent * log10(distance3D + 1);
+
+% Display the new altitude and path loss
+disp(['New UAV Altitude: ', num2str(newAltitude), ' meters']);
+disp(['Path Loss: ', num2str(pathLoss), ' dB']);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Simulating live %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
