@@ -264,3 +264,616 @@ rx_lin= 10^((rx_dB-30)/10);
 snr_lin= rx_lin/ N0_lin;
 if snr_lin<0, snr_lin=0; end
 end
+
+#################################### Beginning of Python Stuff ################################
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Simulation class (simplified for this plot)
+class EnergyOffloadingSimulation:
+    def __init__(self, num_users=50):
+        self.N = num_users
+        self.L = 10
+        self.M = 60
+        self.T = 0.02
+        self.eta_i = 100
+        self.epsilon_i = 5e-6
+        self.N0 = 1e-9
+        self.G = 1e-3
+        self.d0 = 200
+        self.NRB_i = 50
+        self.B_i = self.NRB_i * 180e3
+
+        np.random.seed(42)
+        self.d_i = np.random.uniform(100, 800, self.N)
+        self.C_serv_i = self.eta_i * self.M  # eta_s=1, f_i_M=M
+
+    def compute_optimal_alpha(self, nu, beta, D_i):
+        Eu_i = self.L * self.epsilon_i * self.eta_i * self.M
+        K_i = (np.log(2) * self.N0 * D_i / self.G) * (self.d_i / self.d0)**beta
+        r_i = D_i / (self.B_i * self.T)
+        alpha_unclipped = (1 / r_i) * np.log2(1 / (K_i * (Eu_i - nu * self.C_serv_i)))
+        return np.clip(alpha_unclipped, 0, 1)
+
+    def average_alpha_vs_beta(self, betas, nu):
+        avg_alphas = []
+        np.random.seed(42)
+        D_i = np.random.uniform(1e4, 1e6, self.N)  # fixed D_i for consistency
+        for beta in betas:
+            alpha = self.compute_optimal_alpha(nu, beta, D_i)
+            avg_alphas.append(np.mean(alpha))
+        return avg_alphas
+
+# Prepare data
+sim = EnergyOffloadingSimulation()
+betas = np.linspace(2, 4, 50)
+nu = 1e-5
+avg_alphas = sim.average_alpha_vs_beta(betas, nu)
+
+# Plot
+plt.figure()
+plt.plot(betas, avg_alphas, marker='o')
+plt.xlabel('Pathloss Exponent (β)')
+plt.ylabel('Average Offload Share (α)')
+plt.title('Offloading vs Pathloss Exponent')
+plt.grid(True)
+plt.show()
+
+
+##### summed_energy versus Pathloss ##########
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Reuse the simulation class definition
+class EnergyOffloadingSimulation:
+    def __init__(self, num_users=50):
+        self.N = num_users
+        self.L = 10
+        self.M = 60
+        self.S = 8
+        self.T = 0.02
+        self.eta_i = 100
+        self.eta_s = 1
+        self.epsilon_i = 5e-6
+        self.N0 = 1e-9
+        self.G = 1e-3
+        self.d0 = 200
+        self.NRB_i = 50
+        self.B_i = self.NRB_i * 180e3
+
+        np.random.seed(42)
+        self.d_i = np.random.uniform(100, 800, self.N)
+        self.f_i_M = self.M
+        self.C_serv_i = self.eta_s * self.f_i_M
+
+    def compute_Eu_i(self, alpha):
+        return (1 - alpha) * self.L * self.epsilon_i * self.eta_i * self.f_i_M
+
+    def compute_Etr_i(self, alpha, beta, D_i):
+        factor = (2**(alpha * D_i / (self.B_i * self.T)) - 1)
+        P_tr = factor * self.N0 * self.B_i / self.G * (self.d_i / self.d0)**beta
+        return P_tr * self.T
+
+    def compute_optimal_alpha(self, nu, beta, D_i):
+        Eu_i = self.L * self.epsilon_i * self.eta_i * self.f_i_M
+        K_i = (np.log(2) * self.N0 * D_i / self.G) * (self.d_i / self.d0)**beta
+        r_i = D_i / (self.B_i * self.T)
+        alpha_unclipped = (1 / r_i) * np.log2(1 / (K_i * (Eu_i - nu * self.C_serv_i)))
+        return np.clip(alpha_unclipped, 0, 1)
+
+    def total_energy_for_beta(self, beta, nu):
+        D_i = np.random.uniform(1e4, 1e6, self.N)
+        alpha = self.compute_optimal_alpha(nu, beta, D_i)
+        Eu = self.compute_Eu_i(alpha)
+        Etr = self.compute_Etr_i(alpha, beta, D_i)
+        return np.sum(Eu + Etr)
+
+    def baseline_energy(self, beta, mode):
+        # mode 'none' for alpha=0, 'full' for alpha=1
+        D_i = np.random.uniform(1e4, 1e6, self.N)
+        alpha = np.zeros(self.N) if mode == 'none' else np.ones(self.N)
+        Eu = self.compute_Eu_i(alpha)
+        Etr = self.compute_Etr_i(alpha, beta, D_i)
+        return np.sum(Eu + Etr)
+
+# Set up
+sim = EnergyOffloadingSimulation()
+betas = np.linspace(2, 4, 50)
+nus = [1e-6, 1e-5, 1e-4]
+
+# Compute energies
+baseline_none = [sim.baseline_energy(b, 'none') for b in betas]
+baseline_full = [sim.baseline_energy(b, 'full') for b in betas]
+curves = {nu: [sim.total_energy_for_beta(b, nu) for b in betas] for nu in nus}
+
+# Plot
+plt.figure()
+plt.plot(betas, baseline_none, linestyle='--', label='No Offload')
+plt.plot(betas, baseline_full, linestyle='--', label='Full Offload')
+for nu, energies in curves.items():
+    plt.plot(betas, energies, label=f'Nu={nu:.0e}')
+plt.xlabel('Pathloss Exponent (β)')
+plt.ylabel('Total Energy Consumption (mJ)')
+plt.title('Energy vs Pathloss: Baselines and Offload Policies')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+############ base code #################
+import numpy as np
+import pandas as pd
+import ace_tools as tools
+
+class EnergyOffloadingSimulation:
+    def __init__(self, num_users=50):
+        self.N = num_users
+        self.L = 10  # data blocks
+        self.M = 60  # data elements per block
+        self.S = 8   # bits per element
+        self.T = 0.02  # time period in seconds
+        self.Tpr = 0.001  # server processing time
+        self.eta_i = 100  # device computation cycles per unit
+        self.eta_s = 1    # server efficiency
+        self.epsilon_i = 5e-6  # energy per cycle in mJ
+        self.N0 = 1e-9    # noise power spectral density
+        self.G = 1e-3     # path loss constant
+        self.d0 = 200     # reference distance in meters
+        self.NRB_i = 50
+        self.B_i = self.NRB_i * 180e3  # bandwidth in Hz
+
+        # Random per-user parameters
+        np.random.seed(42)
+        self.d_i = np.random.uniform(100, 800, self.N)   # distance from cell center
+        self.beta = np.random.uniform(2.0, 4.0, self.N)  # pathloss exponent
+        self.D_i = np.random.uniform(1e4, 1e6, self.N)   # data volume in bits
+
+        self.f_i_M = self.M  # linear complexity
+        self.C_serv_i = self.eta_s * self.f_i_M  # constant for all users
+
+    def compute_Eu_i(self, alpha):
+        # Local energy consumption with offloading share alpha
+        return (1 - alpha) * self.L * self.epsilon_i * self.eta_i * self.f_i_M
+
+    def compute_Etr_i(self, alpha):
+        # Transmission energy consumption with offloading share alpha
+        # Eq: E_tr = P_tr * T, where P_tr = ((2^(alpha*D/(B*T)) - 1)*N0*B/G*(d/d0)^beta)
+        factor = (2**(alpha * self.D_i / (self.B_i * self.T)) - 1)
+        P_tr = factor * self.N0 * self.B_i / self.G * (self.d_i / self.d0)**self.beta
+        return P_tr * self.T
+
+    def compute_optimal_alpha(self, nu):
+        Eu_i = self.L * self.epsilon_i * self.eta_i * self.f_i_M
+        K_i = (np.log(2) * self.N0 * self.D_i / self.G) * (self.d_i / self.d0)**self.beta
+        r_i = self.D_i / (self.B_i * self.T)
+        # unclipped alpha
+        alpha_unclipped = (1 / r_i) * np.log2(1 / (K_i * (Eu_i - nu * self.C_serv_i)))
+        # enforce 0 <= alpha <= 1
+        return np.clip(alpha_unclipped, 0, 1)
+
+    def simulate_over_nu(self, nu_values):
+        results = []
+        for nu in nu_values:
+            alphas = self.compute_optimal_alpha(nu)
+            Eu = self.compute_Eu_i(alphas)
+            Etr = self.compute_Etr_i(alphas)
+            total_energy = np.sum(Eu + Etr)
+            avg_alpha = np.mean(alphas)
+            results.append({
+                'nu': nu,
+                'avg_alpha': avg_alpha,
+                'total_energy_mJ': total_energy
+            })
+        return pd.DataFrame(results)
+
+# Run simulation
+sim = EnergyOffloadingSimulation()
+nu_values = np.logspace(-7, -3, num=10)
+df_results = sim.simulate_over_nu(nu_values)
+
+# Display results
+tools.display_dataframe_to_user("Offloading Simulation Results", df_results)
+
+####  Starts here ###############
+
+import numpy as np
+
+class EnergyOffloadingSimulation:
+    def __init__(self, num_users=50):
+        self.N = num_users
+        self.L = 10  # data blocks
+        self.M = 60  # data elements per block
+        self.S = 8  # bits per element
+        self.T = 0.02  # time period in seconds
+        self.Tpr = 0.001  # server processing time
+        self.eta_i = 100  # device computation cycles per unit
+        self.eta_s = 1  # server efficiency
+        self.epsilon_i = 5e-6  # energy per cycle in mJ
+        self.N0 = 1e-9  # noise power spectral density
+        self.G = 1e-3  # path loss constant
+        self.d0 = 200  # reference distance in meters
+        self.NRB_i = 50
+        self.B_i = self.NRB_i * 180e3  # bandwidth in Hz
+
+        # Random per-user parameters
+        self.d_i = np.random.uniform(100, 800, self.N)  # distance from cell center
+        self.beta = np.random.uniform(2.0, 4.0, self.N)  # pathloss exponent
+        self.D_i = np.random.uniform(1e4, 1e6, self.N)  # data volume in bits
+
+        self.f_i_M = self.M  # linear complexity
+        self.C_serv_i = self.eta_s * self.f_i_M  # constant for all users
+
+    def compute_Eu_i(self):
+        return self.epsilon_i * self.L * self.eta_i * self.f_i_M * np.ones(self.N)
+
+    def compute_K_i(self):
+        return (
+            np.log(2)
+            * self.N0
+            * self.D_i
+            / self.G
+            * (self.d_i / self.d0) ** self.beta
+        )
+
+    def compute_r_i(self):
+        return self.D_i / (self.B_i * self.T)
+
+    def compute_optimal_alpha(self, nu):
+        Eu_i = self.compute_Eu_i()
+        K_i = self.compute_K_i()
+        r_i = self.compute_r_i()
+        C_serv_i = self.C_serv_i
+
+        alpha_opt = np.maximum((1 / r_i) * np.log2(1 / (K_i * (Eu_i - nu * C_serv_i))), 0)
+        return alpha_opt
+
+# Initialize simulation
+sim = EnergyOffloadingSimulation()
+# Compute optimal alpha values for an arbitrary nu
+optimal_alphas = sim.compute_optimal_alpha(nu=1e-5)
+optimal_alphas[:10]  # Display first 10 results
+
+
+###### Motion #########3
+import numpy as np
+import matplotlib.pyplot as plt
+
+class MobileOffloadingSimulator:
+    def __init__(self, num_users=50, area_radius=800, dt=0.1, total_time=10, seed=42):
+        # System parameters
+        self.N = num_users
+        self.radius = area_radius
+        self.dt = dt
+        self.total_time = total_time
+        self.steps = int(total_time / dt)
+        # Offloading model parameters
+        self.L = 10
+        self.M = 60
+        self.T = 0.02
+        self.eta_i = 100
+        self.epsilon_i = 5e-6
+        self.N0 = 1e-9
+        self.G = 1e-3
+        self.d0 = 200
+        self.NRB = 50
+        self.B = self.NRB * 180e3
+        self.eta_s = 1
+        
+        np.random.seed(seed)
+        # Initialize random positions in circle
+        angles = np.random.uniform(0, 2*np.pi, self.N)
+        radii = np.sqrt(np.random.uniform(0, self.radius**2, self.N))
+        self.positions = np.vstack([radii*np.cos(angles), radii*np.sin(angles)]).T
+        
+        # Random velocities (magnitude, direction)
+        speeds = np.random.uniform(1, 5, self.N)  # m/s
+        dirs = np.random.uniform(0, 2*np.pi, self.N)
+        self.velocities = np.vstack([speeds*np.cos(dirs), speeds*np.sin(dirs)]).T
+        
+        # Data volumes fixed per user
+        self.D = np.random.uniform(1e4, 1e6, self.N)
+        
+    def step(self):
+        # Move users, reflect at boundary
+        new_pos = self.positions + self.velocities * self.dt
+        dist = np.linalg.norm(new_pos, axis=1)
+        outside = dist > self.radius
+        # Reflect velocities for those outside
+        self.velocities[outside] *= -1
+        self.positions += self.velocities * self.dt
+        
+    def compute_alpha(self, nu, beta):
+        dists = np.linalg.norm(self.positions, axis=1)
+        Eu = self.L * self.epsilon_i * self.eta_i * self.M
+        K = (np.log(2) * self.N0 * self.D / self.G) * (dists/self.d0)**beta
+        r = self.D / (self.B * self.T)
+        alpha = (1/r) * np.log2(1/(K*(Eu - nu*self.eta_s*self.M)))
+        return np.clip(alpha, 0, 1)
+    
+    def compute_energies(self, alpha, beta):
+        dists = np.linalg.norm(self.positions, axis=1)
+        Eu = (1 - alpha) * self.L * self.epsilon_i * self.eta_i * self.M
+        factor = (2**(alpha*self.D/(self.B*self.T)) - 1)
+        P_tr = factor*self.N0*self.B/self.G*(dists/self.d0)**beta
+        Etr = P_tr * self.T
+        return Eu, Etr
+    
+    def run(self, nu=1e-5, beta=3.0):
+        avg_alpha = np.zeros(self.steps)
+        total_energy = np.zeros(self.steps)
+        for t in range(self.steps):
+            alpha = self.compute_alpha(nu, beta)
+            Eu, Etr = self.compute_energies(alpha, beta)
+            avg_alpha[t] = np.mean(alpha)
+            total_energy[t] = np.sum(Eu + Etr)
+            self.step()
+        time = np.arange(self.steps) * self.dt
+        return time, avg_alpha, total_energy
+
+# Run simulation
+sim = MobileOffloadingSimulator()
+time, avg_alpha, total_energy = sim.run(nu=1e-5, beta=3.0)
+
+# Plot results
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1,2,1)
+plt.plot(time, avg_alpha, '-o', markersize=3)
+plt.xlabel('Time (s)')
+plt.ylabel('Average Offload Share (α)')
+plt.title('Offload Share over Time')
+
+plt.subplot(1,2,2)
+plt.plot(time, total_energy, '-o', markersize=3)
+plt.xlabel('Time (s)')
+plt.ylabel('Total Energy (mJ)')
+plt.title('Total Energy over Time')
+
+plt.tight_layout()
+plt.show()
+
+
+############## dynamic pathloss ####################3
+import numpy as np
+import matplotlib.pyplot as plt
+
+class DynamicPathlossOffloadingSimulator:
+    def __init__(self, num_users=50, area_radius=800, dt=0.1, total_time=10, seed=42):
+        # System parameters
+        self.N = num_users
+        self.radius = area_radius
+        self.dt = dt
+        self.total_time = total_time
+        self.steps = int(total_time / dt)
+        # Offloading model parameters
+        self.L = 10
+        self.M = 60
+        self.T = 0.02
+        self.eta_i = 100
+        self.epsilon_i = 5e-6
+        self.N0 = 1e-9
+        self.G = 1e-3
+        self.d0 = 200
+        self.NRB = 50
+        self.B = self.NRB * 180e3
+        self.eta_s = 1
+        
+        np.random.seed(seed)
+        # Initialize random positions within circle
+        angles = np.random.uniform(0, 2*np.pi, self.N)
+        radii = np.sqrt(np.random.uniform(0, self.radius**2, self.N))
+        self.positions = np.vstack([radii*np.cos(angles), radii*np.sin(angles)]).T
+        
+        # Random velocities
+        speeds = np.random.uniform(1, 5, self.N)
+        dirs = np.random.uniform(0, 2*np.pi, self.N)
+        self.velocities = np.vstack([speeds*np.cos(dirs), speeds*np.sin(dirs)]).T
+        
+        # Fixed data volumes
+        self.D = np.random.uniform(1e4, 1e6, self.N)
+        
+    def dynamic_beta(self, distances):
+        """Beta grows from 2 (at center) to 4 (at boundary), plus small log-normal shadowing."""
+        base_beta = 2 + 2 * (distances / self.radius)
+        # add small log-normal shadowing noise
+        shadow = np.random.lognormal(mean=0, sigma=0.1, size=self.N) - 1
+        return np.clip(base_beta + shadow, 2, 5)  # cap to [2,5]
+        
+    def step(self):
+        # Move and reflect at boundary
+        new_pos = self.positions + self.velocities * self.dt
+        dist = np.linalg.norm(new_pos, axis=1)
+        outside = dist > self.radius
+        self.velocities[outside] *= -1
+        self.positions += self.velocities * self.dt
+        
+    def compute_alpha(self, nu, beta):
+        distances = np.linalg.norm(self.positions, axis=1)
+        Eu = self.L * self.epsilon_i * self.eta_i * self.M
+        K = (np.log(2) * self.N0 * self.D / self.G) * (distances/self.d0)**beta
+        r = self.D / (self.B * self.T)
+        alpha_unclipped = (1 / r) * np.log2(1 / (K * (Eu - nu * self.eta_s * self.M)))
+        return np.clip(alpha_unclipped, 0, 1)
+    
+    def compute_energies(self, alpha, beta):
+        distances = np.linalg.norm(self.positions, axis=1)
+        Eu = (1 - alpha) * self.L * self.epsilon_i * self.eta_i * self.M
+        factor = (2**(alpha * self.D / (self.B * self.T)) - 1)
+        P_tr = factor * self.N0 * self.B / self.G * (distances/self.d0)**beta
+        Etr = P_tr * self.T
+        return Eu, Etr
+    
+    def run(self, nu=1e-5):
+        time = np.arange(self.steps) * self.dt
+        avg_alpha = np.zeros(self.steps)
+        total_energy = np.zeros(self.steps)
+        avg_beta = np.zeros(self.steps)
+        
+        for t in range(self.steps):
+            distances = np.linalg.norm(self.positions, axis=1)
+            beta_t = self.dynamic_beta(distances)
+            alpha = self.compute_alpha(nu, beta_t)
+            Eu, Etr = self.compute_energies(alpha, beta_t)
+            
+            avg_beta[t] = np.mean(beta_t)
+            avg_alpha[t] = np.mean(alpha)
+            total_energy[t] = np.sum(Eu + Etr)
+            self.step()
+        
+        # Plot dynamic beta, alpha, energy
+        fig, axs = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+        axs[0].plot(time, avg_beta, '-o', markersize=2)
+        axs[0].set_ylabel('Avg Pathloss Exponent (β)')
+        axs[0].set_title('Dynamic β over Time')
+        axs[0].grid(True)
+        
+        axs[1].plot(time, avg_alpha, '-o', markersize=2)
+        axs[1].set_ylabel('Avg Offload (α)')
+        axs[1].set_title('Offload Share over Time')
+        axs[1].grid(True)
+        
+        axs[2].plot(time, total_energy, '-o', markersize=2)
+        axs[2].set_xlabel('Time (s)')
+        axs[2].set_ylabel('Total Energy (mJ)')
+        axs[2].set_title('Total Energy over Time')
+        axs[2].grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+
+# Run dynamic pathloss simulation
+sim = DynamicPathlossOffloadingSimulator()
+sim.run(nu=1e-5)
+
+
+########## adjust the shadowing variance, velocity distribution, or introduce additional effects   ###################
+'''
+    Adjustable shadowing variance (shadow_sigma), now set to 0.5.
+    Custom velocity range (speed_range=(0.1,10.0)), covering pedestrian to vehicular speeds.
+    Small-scale Rayleigh fading in the transmission power.
+    Dynamic β based on distance plus shadowing.
+
+The resulting plots show spikes in energy when fading and shadowing peak, and more pronounced fluctuations in offload share
+'''
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+class EnhancedDynamicSimulator:
+    def __init__(self,
+                 num_users=50,
+                 area_radius=800,
+                 dt=0.1,
+                 total_time=10,
+                 shadow_sigma=0.2,
+                 speed_range=(0.5, 3.0),
+                 shadow_mean=0,
+                 seed=42):
+        # Simulation parameters
+        self.N = num_users
+        self.radius = area_radius
+        self.dt = dt
+        self.steps = int(total_time / dt)
+        # Model parameters
+        self.L, self.M, self.T = 10, 60, 0.02
+        self.eta_i, self.epsilon_i = 100, 5e-6
+        self.N0, self.G, self.d0 = 1e-9, 1e-3, 200
+        self.NRB, self.B = 50, 50 * 180e3
+        self.eta_s = 1
+        # Mobility & shadowing parameters
+        self.shadow_sigma = shadow_sigma
+        self.shadow_mean = shadow_mean
+        self.min_speed, self.max_speed = speed_range
+        np.random.seed(seed)
+        # Initialize positions
+        angles = np.random.uniform(0, 2*np.pi, self.N)
+        radii = np.sqrt(np.random.uniform(0, self.radius**2, self.N))
+        self.positions = np.vstack([radii*np.cos(angles), radii*np.sin(angles)]).T
+        # Initialize velocities
+        speeds = np.random.uniform(self.min_speed, self.max_speed, self.N)
+        dirs = np.random.uniform(0, 2*np.pi, self.N)
+        self.velocities = np.vstack([speeds*np.cos(dirs), speeds*np.sin(dirs)]).T
+        # Data volumes
+        self.D = np.random.uniform(1e4, 1e6, self.N)
+
+    def dynamic_beta(self, distances):
+        # Linear distance-based beta plus log-normal shadowing
+        base_beta = 2 + 2 * (distances / self.radius)
+        shadow = np.random.lognormal(mean=self.shadow_mean,
+                                     sigma=self.shadow_sigma,
+                                     size=self.N) - 1
+        return np.clip(base_beta + shadow, 2, 5)
+
+    def step(self):
+        new_pos = self.positions + self.velocities * self.dt
+        dist = np.linalg.norm(new_pos, axis=1)
+        outside = dist > self.radius
+        self.velocities[outside] *= -1
+        self.positions += self.velocities * self.dt
+
+    def compute_alpha(self, nu, beta):
+        d = np.linalg.norm(self.positions, axis=1)
+        Eu = self.L * self.epsilon_i * self.eta_i * self.M
+        K = (np.log(2) * self.N0 * self.D / self.G) * (d/self.d0)**beta
+        r = self.D / (self.B * self.T)
+        alpha = (1/r) * np.log2(1 / (K * (Eu - nu * self.eta_s * self.M)))
+        return np.clip(alpha, 0, 1)
+
+    def compute_energies(self, alpha, beta):
+        d = np.linalg.norm(self.positions, axis=1)
+        Eu = (1 - alpha) * self.L * self.epsilon_i * self.eta_i * self.M
+        factor = (2**(alpha * self.D / (self.B * self.T)) - 1)
+        # Add small-scale Rayleigh fading factor
+        fading = np.random.rayleigh(scale=1.0, size=self.N)
+        P_tr = factor * self.N0 * self.B / self.G * (d/self.d0)**beta / fading
+        Etr = P_tr * self.T
+        return Eu, Etr
+
+    def run(self, nu=1e-5):
+        time = np.arange(self.steps) * self.dt
+        avg_beta = np.zeros(self.steps)
+        avg_alpha = np.zeros(self.steps)
+        total_energy = np.zeros(self.steps)
+
+        for t in range(self.steps):
+            d = np.linalg.norm(self.positions, axis=1)
+            beta = self.dynamic_beta(d)
+            alpha = self.compute_alpha(nu, beta)
+            Eu, Etr = self.compute_energies(alpha, beta)
+
+            avg_beta[t] = np.mean(beta)
+            avg_alpha[t] = np.mean(alpha)
+            total_energy[t] = np.sum(Eu + Etr)
+            
+            self.step()
+
+        # Plot
+        fig, axs = plt.subplots(3,1, figsize=(8,10), sharex=True)
+        axs[0].plot(time, avg_beta)
+        axs[0].set_ylabel('Avg β')
+        axs[0].grid(True)
+
+        axs[1].plot(time, avg_alpha)
+        axs[1].set_ylabel('Avg α')
+        axs[1].grid(True)
+
+        axs[2].plot(time, total_energy)
+        axs[2].set_ylabel('Total Energy (mJ)')
+        axs[2].set_xlabel('Time (s)')
+        axs[2].grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+
+# Example: fine-tuned simulation
+sim = EnhancedDynamicSimulator(shadow_sigma=0.5, speed_range=(0.1, 10.0))
+sim.run(nu=2e-5)
+
+
+
+
+
+
+
